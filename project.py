@@ -215,11 +215,74 @@ class FittingCQ:
 
 
 def algorithm_P(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
-    query = FittingCQ(I.get_schema(), E.get_arity())
     
-    # TODO
+    k = E.get_arity()
+    schema = I.get_schema()
+
+    def strongest_example():
+        I_star = DatabaseInstance("strongest", schema)
+        c = "c"
+        for R, arity in schema.relations:
+            I_star.add_fact(R, tuple([c] * arity))
+        return (I_star, tuple([c] * k))
+
+    def direct_product(ex1, ex2):
+        I1, a1 = ex1
+        I2, a2 = ex2
+        I_prod = DatabaseInstance("product", schema)
+        facts1_by_rel = {}
+
+        for R, tup in I1.facts:
+            facts1_by_rel.setdefault(R, []).append(tup)
+
+        for R, tup_list1 in facts1_by_rel.items():
+            for tup1 in tup_list1:
+                for R2, tup2 in I2.facts:
+                    if R2 == R:
+                        new_tup = tuple((tup1[i], tup2[i]) for i in range(len(tup1)))
+                        I_prod.add_fact(R, new_tup)
+
+        new_answer = tuple((a1[i], a2[i]) for i in range(k))
+
+        return (I_prod, new_answer)
+
+    def canonical_cq(ex):
+        I_final, answer_final = ex
+        query = FittingCQ(schema, k)
+        all_values = set()
+
+        for R, tup in I_final.facts:
+            for v in tup:
+                all_values.add(v)
+
+        for v in answer_final:
+            all_values.add(v)
+
+        value_to_var = {}
+        var_idx = 1
+
+        for val in answer_final:
+            if val not in value_to_var:
+                value_to_var[val] = f"x{var_idx}"
+                var_idx += 1
+
+        for val in sorted(all_values, key=str):
+            if val not in value_to_var:
+                value_to_var[val] = f"x{var_idx}"
+                var_idx += 1
+
+        for R, tup in sorted(I_final.facts):
+            var_tup = tuple(value_to_var[val] for val in tup)
+            query.add_relational_atom(R, var_tup)
+
+        return query
+
+    e_star = strongest_example()
     
-    return query
+    for pos_example in E.positive_examples:
+        e_star = direct_product(e_star, pos_example)
+
+    return canonical_cq(e_star)
     
 def algorithm_M(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
     query = FittingCQ(I.get_schema(), E.get_arity())
@@ -279,45 +342,121 @@ E2.add_positive_example(I, ("franklin", ))
 E2.add_positive_example(I, ("donald", ))
 E2.add_negative_example(I, ("barack", ))
 
-print("----------------")
-print()
+# print("----------------")
+# print()
 
 print("TEST CASE 1")
-print()
+# print()
 
-print(E1)
-print()
+# print(E1)
+# print()
 
 print(f"{algorithm_P(I, E1)}")
-print(f"{algorithm_M(I, E1)}")
-print(f"{algorithm_B(I, E1)}")
-print(f"{algorithm_R(I, E1)}")
-print()
+# print(f"{algorithm_M(I, E1)}")
+# print(f"{algorithm_B(I, E1)}")
+# print(f"{algorithm_R(I, E1)}")
+# print()
 
-q = FittingCQ(S, 1)
-q.add_relational_atom("Democrat", ("x1", ))
+# q = FittingCQ(S, 1)
+# q.add_relational_atom("Democrat", ("x1", ))
 
-print(q)
-print()
+# print(q)
+# print()
 
-print("----------------")
-print()
+# print("----------------")
+# print()
 
 print("TEST CASE 2")
-print()
+# print()
 
-print(E2)
-print()
+# print(E2)
+# print()
 
 print(f"{algorithm_P(I, E2)}")
-print(f"{algorithm_M(I, E2)}")
-print(f"{algorithm_B(I, E2)}")
-print(f"{algorithm_R(I, E2)}")
-print()
+# print(f"{algorithm_M(I, E2)}")
+# print(f"{algorithm_B(I, E2)}")
+# print(f"{algorithm_R(I, E2)}")
+# print()
 
-q = FittingCQ(S, 1)
-q.add_relational_atom("Father", ("x2", "x1"))
-q.add_relational_atom("Businessman", ("x2", ))
+# q = FittingCQ(S, 1)
+# q.add_relational_atom("Father", ("x2", "x1"))
+# q.add_relational_atom("Businessman", ("x2", ))
 
-print(q)
-print()
+# print(q)
+# print()
+
+
+# def algorithm_P(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
+#     """Algorithm P
+#     Returns the canonical CQ of the direct product of all positive examples.
+#     Ignores negative examples.
+#     """
+#     k = E.get_arity()
+#     schema = I.get_schema()            
+
+#     # strongest example e_k^>
+#     def strongest_example(schema: DatabaseSchema, k: int):
+#         I_star = DatabaseInstance("strongest", schema)
+#         c = "c"                                 
+#         for R, arity in schema.relations:
+#             fact = tuple([c] * arity)
+#             I_star.add_fact(R, fact)
+#         answer = tuple([c] * k)
+#         return (I_star, answer)
+
+#     # Direct product of two examples
+#     def direct_product(ex1, ex2):
+#         I1, a1 = ex1
+#         I2, a2 = ex2
+#         I_prod = DatabaseInstance("product", schema)
+
+#         facts1_by_rel = {}
+
+#         for R, tup in I1.facts:
+#             facts1_by_rel.setdefault(R, []).append(tup)
+
+#         for R, tup_list1 in facts1_by_rel.items():
+#             for tup1 in tup_list1:
+#                 for R2, tup2 in I2.facts:
+#                     if R2 == R:
+#                         new_tup = tuple((tup1[i], tup2[i]) for i in range(len(tup1)))
+#                         I_prod.add_fact(R, new_tup)
+
+#         new_answer = tuple((a1[i], a2[i]) for i in range(k))
+#         return (I_prod, new_answer)
+
+#     # Canonical CQ of an example
+#     def canonical_cq(ex, schema, arity):
+#         I, answer = ex
+#         query = FittingCQ(schema, arity)
+
+#         # All domain values (including answer tuple)
+#         all_values = I.get_active_domain().copy()
+#         for val in answer:
+#             all_values.add(val)
+
+#         # Map every value → variable (answer variables first)
+#         value_to_var = {}
+#         var_idx = 1
+#         for val in answer:                      # assign x1, x2, ... to distinguished positions
+#             if val not in value_to_var:
+#                 value_to_var[val] = f"x{var_idx}"
+#                 var_idx += 1
+#         for val in sorted(all_values, key=str): # deterministic order for remaining vars
+#             if val not in value_to_var:
+#                 value_to_var[val] = f"x{var_idx}"
+#                 var_idx += 1
+
+#         # Add every fact as a relational atom (using variables)
+#         for R, tup in sorted(I.facts):          # deterministic order
+#             var_tup = tuple(value_to_var[val] for val in tup)
+#             query.add_relational_atom(R, var_tup)
+
+#         return query
+
+#     #Algorithm P
+#     e_star = strongest_example(schema, k)
+#     for pos_example in E.positive_examples:
+#         e_star = direct_product(e_star, pos_example)
+
+#     return canonical_cq(e_star, schema, k)

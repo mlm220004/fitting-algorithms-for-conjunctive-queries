@@ -28,6 +28,9 @@ presidents_examples_1.add_positive_example(presidents_instance, ("franklin", ))
 presidents_examples_1.add_positive_example(presidents_instance, ("barack", ))
 presidents_examples_1.add_negative_example(presidents_instance, ("donald", ))
 
+print("Testing algorithm P")
+print(f"{algorithm_P(presidents_instance, presidents_examples_1)}")
+
 """
 ANSWER
 

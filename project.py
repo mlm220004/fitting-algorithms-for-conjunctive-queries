@@ -214,232 +214,161 @@ class FittingCQ:
         string += "."
         return string
 
+#helper functions
+def strongest_example(schema: DatabaseSchema, k: int):
+    """Build the strongest possible example."""
+    I_star = DatabaseInstance("strongest", schema)
+    c = "c"
+    for R, arity in schema.relations:
+        I_star.add_fact(R, tuple([c] * arity))
+    return (I_star, tuple([c] * k))
+
+
+def canonical_cq(ex, schema: DatabaseSchema, k: int) -> FittingCQ:
+    """Turn an example (I, a) into its canonical FittingCQ."""
+    I_final, answer_final = ex
+    query = FittingCQ(schema, k)
+    all_values = set()
+    for R, tup in I_final.facts:
+        for v in tup:
+            all_values.add(v)
+    for v in answer_final:
+        all_values.add(v)
+
+    value_to_var = {}
+    var_idx = 1
+    for val in answer_final:
+        if val not in value_to_var:
+            value_to_var[val] = f"x{var_idx}"
+            var_idx += 1
+    for val in sorted(all_values, key=str):
+        if val not in value_to_var:
+            value_to_var[val] = f"x{var_idx}"
+            var_idx += 1
+
+    for R, tup in sorted(I_final.facts):
+        var_tup = tuple(value_to_var[val] for val in tup)
+        query.add_relational_atom(R, var_tup)
+    return query
+
+
+def direct_product(ex1, ex2, schema: DatabaseSchema, k: int):
+    """Direct product of two examples."""
+    I1, a1 = ex1
+    I2, a2 = ex2
+    I_prod = DatabaseInstance("product", schema)
+    facts1_by_rel = {}
+    for R, tup in I1.facts:
+        facts1_by_rel.setdefault(R, []).append(tup)
+
+    for R, tup_list1 in facts1_by_rel.items():
+        for tup1 in tup_list1:
+            for R2, tup2 in I2.facts:
+                if R2 == R:
+                    new_tup = tuple((tup1[i], tup2[i]) for i in range(len(tup1)))
+                    I_prod.add_fact(R, new_tup)
+
+    new_answer = tuple((a1[i], a2[i]) for i in range(k))
+    return (I_prod, new_answer)
+
+
+def query_holds_on_example(ex_query, I_target: DatabaseInstance, a_target: tuple, k: int) -> bool:
+    """Does the CQ represented by ex_query return a_target on I_target?"""
+    I_q, a_q = ex_query
+    values = set()
+    for R, tup in I_q.facts:
+        for v in tup:
+            values.add(v)
+    for v in a_q:
+        values.add(v)
+    values = list(values)
+    target_domain = list(I_target.get_active_domain())
+
+    if not target_domain:
+        return len(values) == 0 and len(a_target) == 0
+
+    forced_map = {}
+    for i in range(k):
+        forced_map[a_q[i]] = a_target[i]
+
+    free_values = [v for v in values if v not in forced_map]
+
+    from itertools import product
+    for assignment_tuple in product(target_domain, repeat=len(free_values)):
+        h = dict(forced_map)
+        for idx, v in enumerate(free_values):
+            h[v] = assignment_tuple[idx]
+
+        valid = True
+        for R, tup in I_q.facts:
+            mapped_tup = tuple(h[v] for v in tup)
+            if (R, mapped_tup) not in I_target.facts:
+                valid = False
+                break
+        if valid:
+            return True
+    return False
+
+
+def fits_labeled_examples(q: FittingCQ, E: LabeledExamples, schema: DatabaseSchema, k: int) -> bool:
+    """Does this FittingCQ fit all the positive/negative examples in E?"""
+    I_q = DatabaseInstance("q_canonical", schema)
+    for R, B in q.relational_atoms:
+        I_q.add_fact(R, B)
+    a_q = q.answer_variables
+    ex_query = (I_q, a_q)
+
+    for (I_pos, a_pos) in E.positive_examples:
+        if not query_holds_on_example(ex_query, I_pos, a_pos, k):
+            return False
+    for (I_neg, a_neg) in E.negative_examples:
+        if query_holds_on_example(ex_query, I_neg, a_neg, k):
+            return False
+    return True
+
+
+def minimize(ex, E: LabeledExamples, schema: DatabaseSchema, k: int):
+    """Greedily remove facts while the CQ still fits."""
+    I_curr, a_curr = ex
+    changed = True
+    while changed:
+        changed = False
+        current_facts = list(I_curr.facts)
+        for fact_to_remove in current_facts:
+            I_candidate = DatabaseInstance("candidate", schema)
+            for fact in I_curr.facts:
+                if fact != fact_to_remove:
+                    I_candidate.add_fact(fact[0], fact[1])
+            candidate_ex = (I_candidate, a_curr)
+            if fits_labeled_examples(canonical_cq(candidate_ex, schema, k), E, schema, k):
+                I_curr = I_candidate
+                changed = True
+                break
+    return (I_curr, a_curr)
 
 def algorithm_P(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
-    
     k = E.get_arity()
     schema = I.get_schema()
 
-    def strongest_example():
-        I_star = DatabaseInstance("strongest", schema)
-        c = "c"
-        for R, arity in schema.relations:
-            I_star.add_fact(R, tuple([c] * arity))
-        return (I_star, tuple([c] * k))
-
-    def direct_product(ex1, ex2):
-        I1, a1 = ex1
-        I2, a2 = ex2
-        I_prod = DatabaseInstance("product", schema)
-        facts1_by_rel = {}
-
-        for R, tup in I1.facts:
-            facts1_by_rel.setdefault(R, []).append(tup)
-
-        for R, tup_list1 in facts1_by_rel.items():
-            for tup1 in tup_list1:
-                for R2, tup2 in I2.facts:
-                    if R2 == R:
-                        new_tup = tuple((tup1[i], tup2[i]) for i in range(len(tup1)))
-                        I_prod.add_fact(R, new_tup)
-
-        new_answer = tuple((a1[i], a2[i]) for i in range(k))
-
-        return (I_prod, new_answer)
-
-    def canonical_cq(ex):
-        I_final, answer_final = ex
-        query = FittingCQ(schema, k)
-        all_values = set()
-
-        for R, tup in I_final.facts:
-            for v in tup:
-                all_values.add(v)
-
-        for v in answer_final:
-            all_values.add(v)
-
-        value_to_var = {}
-        var_idx = 1
-
-        for val in answer_final:
-            if val not in value_to_var:
-                value_to_var[val] = f"x{var_idx}"
-                var_idx += 1
-
-        for val in sorted(all_values, key=str):
-            if val not in value_to_var:
-                value_to_var[val] = f"x{var_idx}"
-                var_idx += 1
-
-        for R, tup in sorted(I_final.facts):
-            var_tup = tuple(value_to_var[val] for val in tup)
-            query.add_relational_atom(R, var_tup)
-
-        return query
-
-    e_star = strongest_example()
+    e_star = strongest_example(schema, k)
     
     for pos_example in E.positive_examples:
-        e_star = direct_product(e_star, pos_example)
+        e_star = direct_product(e_star, pos_example, schema, k)
 
-    return canonical_cq(e_star)
+    return canonical_cq(e_star, schema, k)
     
 
 def algorithm_M(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
-    
     k = E.get_arity()
     schema = I.get_schema()
 
-    def strongest_example():
-        I_star = DatabaseInstance("strongest", schema)
-        c = "c"
-        for R, arity in schema.relations:
-            I_star.add_fact(R, tuple([c] * arity))
-        return (I_star, tuple([c] * k))
-
-    def direct_product(ex1, ex2):
-        I1, a1 = ex1
-        I2, a2 = ex2
-        I_prod = DatabaseInstance("product", schema)
-        facts1_by_rel = {}
-
-        for R, tup in I1.facts:
-            facts1_by_rel.setdefault(R, []).append(tup)
-
-        for R, tup_list1 in facts1_by_rel.items():
-            for tup1 in tup_list1:
-                for R2, tup2 in I2.facts:
-                    if R2 == R:
-                        new_tup = tuple((tup1[i], tup2[i]) for i in range(len(tup1)))
-                        I_prod.add_fact(R, new_tup)
-
-        new_answer = tuple((a1[i], a2[i]) for i in range(k))
-        return (I_prod, new_answer)
-
-    def canonical_cq(ex):
-        I_final, answer_final = ex
-        query = FittingCQ(schema, k)
-        all_values = set()
-
-        for R, tup in I_final.facts:
-            for v in tup:
-                all_values.add(v)
-
-        for v in answer_final:
-            all_values.add(v)
-
-        value_to_var = {}
-        var_idx = 1
-
-        for val in answer_final:
-            if val not in value_to_var:
-                value_to_var[val] = f"x{var_idx}"
-                var_idx += 1
-
-        for val in sorted(all_values, key=str):
-            if val not in value_to_var:
-                value_to_var[val] = f"x{var_idx}"
-                var_idx += 1
-
-        for R, tup in sorted(I_final.facts):
-            var_tup = tuple(value_to_var[val] for val in tup)
-            query.add_relational_atom(R, var_tup)
-
-        return query
-
-    def query_holds_on_example(ex_query, I_target: DatabaseInstance, a_target: tuple) -> bool:
-        """
-        ex_query is an example (I_q, a_q) representing the canonical CQ of I_q
-        with answer tuple a_q.
-
-        This checks whether that CQ returns a_target on I_target.
-        """
-        I_q, a_q = ex_query
-
-        values = set()
-        for R, tup in I_q.facts:
-            for v in tup:
-                values.add(v)
-        for v in a_q:
-            values.add(v)
-
-        values = list(values)
-        target_domain = list(I_target.get_active_domain())
-
-        if len(target_domain) == 0:
-            return len(values) == 0 and len(a_target) == 0
-
-        forced_map = {}
-        for i in range(k):
-            forced_map[a_q[i]] = a_target[i]
-
-        free_values = [v for v in values if v not in forced_map]
-
-        for assignment_tuple in product(target_domain, repeat=len(free_values)):
-            h = dict(forced_map)
-
-            for idx, v in enumerate(free_values):
-                h[v] = assignment_tuple[idx]
-
-            valid = True
-            for R, tup in I_q.facts:
-                mapped_tup = tuple(h[v] for v in tup)
-                if (R, mapped_tup) not in I_target.facts:
-                    valid = False
-                    break
-
-            if valid:
-                return True
-
-        return False
-
-    def fits_labeled_examples(ex_query) -> bool:
-        for (I_pos, a_pos) in E.positive_examples:
-            if not query_holds_on_example(ex_query, I_pos, a_pos):
-                return False
-
-        for (I_neg, a_neg) in E.negative_examples:
-            if query_holds_on_example(ex_query, I_neg, a_neg):
-                return False
-
-        return True
-
-    def minimize(ex):
-        """
-        Greedily remove facts as long as the resulting canonical CQ
-        still fits all labeled examples.
-        """
-        I_curr, a_curr = ex
-        changed = True
-
-        while changed:
-            changed = False
-            current_facts = list(I_curr.facts)
-
-            for fact_to_remove in current_facts:
-                I_candidate = DatabaseInstance("candidate", schema)
-
-                for fact in I_curr.facts:
-                    if fact != fact_to_remove:
-                        I_candidate.add_fact(fact[0], fact[1])
-
-                candidate_ex = (I_candidate, a_curr)
-
-                if fits_labeled_examples(candidate_ex):
-                    I_curr = I_candidate
-                    changed = True
-                    break
-
-        return (I_curr, a_curr)
-
-    e_star = strongest_example()
+    e_star = strongest_example(schema, k)
 
     for pos_example in E.positive_examples:
-        e_star = direct_product(e_star, pos_example)
-        e_star = minimize(e_star)
+        e_star = direct_product(e_star, pos_example, schema, k)
+        e_star = minimize(e_star, E, schema, k)
 
-    return canonical_cq(e_star)
+    return canonical_cq(e_star, schema, k)
     
 
 def algorithm_B(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
@@ -497,13 +426,15 @@ E2.add_negative_example(I, ("barack", ))
 # print()
 
 print("TEST CASE 1")
-# print()
+print()
 
-# print(E1)
-# print()
-
+print(E1)
+print()
+print("Algorithm P:")
 print(f"{algorithm_P(I, E1)}")
-# print(f"{algorithm_M(I, E1)}")
+print("\nAlgorithm M:")
+print(f"{algorithm_M(I, E1)}")
+print()
 # print(f"{algorithm_B(I, E1)}")
 # print(f"{algorithm_R(I, E1)}")
 # print()

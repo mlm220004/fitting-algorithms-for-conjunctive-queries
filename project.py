@@ -214,7 +214,10 @@ class FittingCQ:
         string += "."
         return string
 
-#helper functions
+#-----------------------------------------------------------------------------------------------------------------
+#   Helper Functions
+#-----------------------------------------------------------------------------------------------------------------
+
 def strongest_example(schema: DatabaseSchema, k: int):
     """Build the strongest possible example."""
     I_star = DatabaseInstance("strongest", schema)
@@ -273,7 +276,7 @@ def direct_product(ex1, ex2, schema: DatabaseSchema, k: int):
 
 
 def query_holds_on_example(ex_query, I_target: DatabaseInstance, a_target: tuple, k: int) -> bool:
-    """Does the CQ represented by ex_query return a_target on I_target?"""
+    """Checks if the CQ represented by ex_query returns a_target on I_target"""
     I_q, a_q = ex_query
     values = set()
     for R, tup in I_q.facts:
@@ -293,7 +296,6 @@ def query_holds_on_example(ex_query, I_target: DatabaseInstance, a_target: tuple
 
     free_values = [v for v in values if v not in forced_map]
 
-    from itertools import product
     for assignment_tuple in product(target_domain, repeat=len(free_values)):
         h = dict(forced_map)
         for idx, v in enumerate(free_values):
@@ -311,7 +313,7 @@ def query_holds_on_example(ex_query, I_target: DatabaseInstance, a_target: tuple
 
 
 def fits_labeled_examples(q: FittingCQ, E: LabeledExamples, schema: DatabaseSchema, k: int) -> bool:
-    """Does this FittingCQ fit all the positive/negative examples in E?"""
+    """Check if the FittingCQ fits all the positive/negative examples in E"""
     I_q = DatabaseInstance("q_canonical", schema)
     for R, B in q.relational_atoms:
         I_q.add_fact(R, B)
@@ -346,6 +348,23 @@ def minimize(ex, E: LabeledExamples, schema: DatabaseSchema, k: int):
                 break
     return (I_curr, a_curr)
 
+def upward_refinements(q: FittingCQ, schema: DatabaseSchema, k: int):
+    """Drop one atom at a time."""
+    refinements = []
+    atoms = list(q.relational_atoms)
+    for i in range(len(atoms)):
+        new_atoms = atoms[:i] + atoms[i+1:]
+        new_q = FittingCQ(schema, k)
+        new_q.answer_variables = q.answer_variables
+        for R, B in new_atoms:
+            new_q.add_relational_atom(R, B)
+        refinements.append(new_q)
+    return refinements
+
+#-----------------------------------------------------------------------------------------------------------------
+#   Algorithms
+#-----------------------------------------------------------------------------------------------------------------
+
 def algorithm_P(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
     k = E.get_arity()
     schema = I.get_schema()
@@ -379,8 +398,31 @@ def algorithm_B(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
     return query
     
 def algorithm_R(I: DatabaseInstance, E: LabeledExamples) -> Optional[FittingCQ]:
-    
-    # TODO
+    k = E.get_arity()
+    schema = I.get_schema()
+
+    # BFS search
+    from collections import deque
+    e_star = strongest_example(schema, k)
+    start_q = canonical_cq(e_star, schema, k)
+
+    queue = deque([start_q])
+    visited = set()
+
+    while queue:
+        q = queue.popleft()
+        q_str = str(q)
+        if q_str in visited:
+            continue
+        visited.add(q_str)
+
+        if fits_labeled_examples(q, E, schema, k):
+            return q
+
+        for p in upward_refinements(q, schema, k):
+            p_str = str(p)
+            if p_str not in visited:
+                queue.append(p)
     
     return None
 
@@ -436,8 +478,9 @@ print("\nAlgorithm M:")
 print(f"{algorithm_M(I, E1)}")
 print()
 # print(f"{algorithm_B(I, E1)}")
-# print(f"{algorithm_R(I, E1)}")
-# print()
+print("Algorithm R:")
+print(f"{algorithm_R(I, E1)}")
+print()
 
 # q = FittingCQ(S, 1)
 # q.add_relational_atom("Democrat", ("x1", ))
@@ -449,16 +492,19 @@ print()
 # print()
 
 print("TEST CASE 2")
-# print()
+print()
 
-# print(E2)
-# print()
+print(E2)
+print()
 
+print("Algorithm P:")
 print(f"{algorithm_P(I, E2)}")
-# print(f"{algorithm_M(I, E2)}")
+print("\nAlgorithm M")
+print(f"{algorithm_M(I, E2)}")
 # print(f"{algorithm_B(I, E2)}")
-# print(f"{algorithm_R(I, E2)}")
-# print()
+print("\nAlgorithm R:")
+print(f"{algorithm_R(I, E2)}")
+print()
 
 # q = FittingCQ(S, 1)
 # q.add_relational_atom("Father", ("x2", "x1"))

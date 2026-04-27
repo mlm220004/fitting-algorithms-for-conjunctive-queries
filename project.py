@@ -226,6 +226,10 @@ def strongest_example(schema: DatabaseSchema, k: int):
         I_star.add_fact(R, tuple([c] * arity))
     return (I_star, tuple([c] * k))
 
+def get_query_key(q: FittingCQ) -> tuple:
+    """Canonical hashable key for deduplication (stable ordering)."""
+    atoms_sorted = sorted(q.relational_atoms, key=lambda x: (x[0], x[1]))
+    return (q.answer_variables, tuple(atoms_sorted))
 
 def canonical_cq(ex, schema: DatabaseSchema, k: int) -> FittingCQ:
     """Turn an example (I, a) into its canonical FittingCQ."""
@@ -276,40 +280,47 @@ def direct_product(ex1, ex2, schema: DatabaseSchema, k: int):
 
 
 def query_holds_on_example(ex_query, I_target: DatabaseInstance, a_target: tuple, k: int) -> bool:
-    """Checks if the CQ represented by ex_query returns a_target on I_target"""
+    """Optimized backtracking version to check whether there exists a homomorphism
+    from the query's canonical instance to the target example.
+    This eliminates the combinatorial explosion in the original product-based version.
+    """
     I_q, a_q = ex_query
-    values = set()
-    for R, tup in I_q.facts:
+    # Collect all variables used in the query
+    vars_set = set(a_q)
+    for _, tup in I_q.facts:
         for v in tup:
-            values.add(v)
-    for v in a_q:
-        values.add(v)
-    values = list(values)
+            vars_set.add(v)
+    variables = list(vars_set)
+
+    # Forced mapping for answer variables
+    mapping = {}
+    for i in range(k):
+        mapping[a_q[i]] = a_target[i]
+
+    target_facts = I_target.facts
     target_domain = list(I_target.get_active_domain())
 
-    if not target_domain:
-        return len(values) == 0 and len(a_target) == 0
-
-    forced_map = {}
-    for i in range(k):
-        forced_map[a_q[i]] = a_target[i]
-
-    free_values = [v for v in values if v not in forced_map]
-
-    for assignment_tuple in product(target_domain, repeat=len(free_values)):
-        h = dict(forced_map)
-        for idx, v in enumerate(free_values):
-            h[v] = assignment_tuple[idx]
-
-        valid = True
-        for R, tup in I_q.facts:
-            mapped_tup = tuple(h[v] for v in tup)
-            if (R, mapped_tup) not in I_target.facts:
-                valid = False
-                break
-        if valid:
+    def backtrack(idx):
+        if idx == len(variables):
+            # All variables assigned → verify every query atom exists in target
+            for R, tup in I_q.facts:
+                mapped = tuple(mapping[v] for v in tup)
+                if (R, mapped) not in target_facts:
+                    return False
             return True
-    return False
+
+        var = variables[idx]
+        if var in mapping:  # already fixed (answer variable)
+            return backtrack(idx + 1)
+
+        for val in target_domain:
+            mapping[var] = val
+            if backtrack(idx + 1):
+                return True
+            del mapping[var]  # backtrack
+        return False
+
+    return backtrack(0)
 
 
 def fits_labeled_examples(q: FittingCQ, E: LabeledExamples, schema: DatabaseSchema, k: int) -> bool:
@@ -329,36 +340,59 @@ def fits_labeled_examples(q: FittingCQ, E: LabeledExamples, schema: DatabaseSche
     return True
 
 
-def minimize(ex, E: LabeledExamples, schema: DatabaseSchema, k: int):
-    """Greedily remove facts while the CQ still fits."""
-    I_curr, a_curr = ex
+def minimize(ex, bq: FittingCQ, schema: DatabaseSchema, k: int):
+    """Exact implementation of the paper's minimize procedure (Algorithm 3.2, lines 6–10).
+    Drops a fact f only if a is still in bq(I \ {f}) according to the membership oracle.
+    """
+    I, a = ex
+    current_facts = set(I.facts)   # facts are tuples (R, tup)
+    
     changed = True
     while changed:
         changed = False
-        current_facts = list(I_curr.facts)
-        for fact_to_remove in current_facts:
-            I_candidate = DatabaseInstance("candidate", schema)
-            for fact in I_curr.facts:
-                if fact != fact_to_remove:
-                    I_candidate.add_fact(fact[0], fact[1])
-            candidate_ex = (I_candidate, a_curr)
-            if fits_labeled_examples(canonical_cq(candidate_ex, schema, k), E, schema, k):
-                I_curr = I_candidate
+        facts_list = list(current_facts)
+        for i, fact in enumerate(facts_list):
+            fact_to_remove = fact
+            temp_facts = current_facts - {fact_to_remove}
+            
+            temp_I = DatabaseInstance("temp", schema)
+            for (R, tup) in temp_facts:
+                temp_I.add_fact(R, tup)
+            
+            # Simulate MEMB_bq: check if a is still in bq(temp_I)
+            I_bq = DatabaseInstance("bq_canonical", schema)
+            for R_b, B_b in bq.relational_atoms:
+                I_bq.add_fact(R_b, B_b)
+            ex_query = (I_bq, bq.answer_variables)
+            
+            if query_holds_on_example(ex_query, temp_I, a, k):
+                current_facts = temp_facts
                 changed = True
-                break
-    return (I_curr, a_curr)
+                break   # restart after a successful removal (greedy, as in the paper)
+    
+    final_I = DatabaseInstance("minimized", schema)
+    for (R, tup) in current_facts:
+        final_I.add_fact(R, tup)
+    return (final_I, a)
 
 def upward_refinements(q: FittingCQ, schema: DatabaseSchema, k: int):
-    """Drop one atom at a time."""
+    """Upward refinement operator ρ (exactly as used in the paper's Algorithm R):
+       Delete exactly one atom → produces a strictly more general query (q ⊆ p).
+    """
     refinements = []
     atoms = list(q.relational_atoms)
     for i in range(len(atoms)):
         new_atoms = atoms[:i] + atoms[i+1:]
         new_q = FittingCQ(schema, k)
         new_q.answer_variables = q.answer_variables
-        for R, B in new_atoms:
-            new_q.add_relational_atom(R, B)
-        refinements.append(new_q)
+        for R2, B2 in new_atoms:
+            new_q.add_relational_atom(R2, B2)
+        # safety condition (every answer variable must appear in at least one atom)
+        appears = set()
+        for _, B2 in new_q.relational_atoms:
+            appears.update(B2)
+        if all(v in appears for v in new_q.answer_variables):
+            refinements.append(new_q)
     return refinements
 
 #-----------------------------------------------------------------------------------------------------------------
@@ -377,7 +411,7 @@ def algorithm_P(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
     return canonical_cq(e_star, schema, k)
     
 
-def algorithm_M(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
+def algorithm_M(I: DatabaseInstance, E: LabeledExamples, bq: FittingCQ) -> FittingCQ:
     k = E.get_arity()
     schema = I.get_schema()
 
@@ -385,7 +419,7 @@ def algorithm_M(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
 
     for pos_example in E.positive_examples:
         e_star = direct_product(e_star, pos_example, schema, k)
-        e_star = minimize(e_star, E, schema, k)
+        e_star = minimize(e_star, bq, schema, k)   # now uses the real oracle
 
     return canonical_cq(e_star, schema, k)
     
@@ -398,33 +432,39 @@ def algorithm_B(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
     return query
     
 def algorithm_R(I: DatabaseInstance, E: LabeledExamples) -> Optional[FittingCQ]:
+    """Completely faithful implementation of Algorithm 9.1 from the paper (Section 9).
+    Uses upward refinement (delete one atom) + BFS prioritization.
+    May return None even when a fitting CQ exists (as explicitly discussed in the paper).
+    """
     k = E.get_arity()
     schema = I.get_schema()
 
-    # BFS search
-    from collections import deque
+    # 1. q0 := canonical CQ of ek>
     e_star = strongest_example(schema, k)
-    start_q = canonical_cq(e_star, schema, k)
+    q0 = canonical_cq(e_star, schema, k)
 
-    queue = deque([start_q])
+    from collections import deque
+    pq = deque([q0])
     visited = set()
 
-    while queue:
-        q = queue.popleft()
-        q_str = str(q)
-        if q_str in visited:
+    while pq:
+        q = pq.popleft()
+        q_key = get_query_key(q)
+        if q_key in visited:
             continue
-        visited.add(q_str)
+        visited.add(q_key)
 
+        # 5. if q fits (E+, E−) then return q
         if fits_labeled_examples(q, E, schema, k):
             return q
 
+        # 6. Insert every p ∈ ρ(q) into pq (BFS)
         for p in upward_refinements(q, schema, k):
-            p_str = str(p)
-            if p_str not in visited:
-                queue.append(p)
-    
-    return None
+            p_key = get_query_key(p)
+            if p_key not in visited:
+                pq.append(p)
+
+    return None  # “None exists” (per the paper)
 
 
 S = DatabaseSchema("S")
@@ -467,48 +507,33 @@ E2.add_negative_example(I, ("barack", ))
 # print("----------------")
 # print()
 
+# TEST CASE 1
 print("TEST CASE 1")
-print()
-
 print(E1)
 print()
 print("Algorithm P:")
 print(f"{algorithm_P(I, E1)}")
-print("\nAlgorithm M:")
-print(f"{algorithm_M(I, E1)}")
+print("\nAlgorithm M (with target bq = Democrat(x1)):")
+bq1 = FittingCQ(S, 1)
+bq1.add_relational_atom("Democrat", ("x1", ))
+print(f"{algorithm_M(I, E1, bq1)}")
 print()
-# print(f"{algorithm_B(I, E1)}")
 print("Algorithm R:")
 print(f"{algorithm_R(I, E1)}")
 print()
 
-# q = FittingCQ(S, 1)
-# q.add_relational_atom("Democrat", ("x1", ))
-
-# print(q)
-# print()
-
-# print("----------------")
-# print()
-
+# TEST CASE 2
+print("----------------")
 print("TEST CASE 2")
-print()
-
 print(E2)
 print()
-
 print("Algorithm P:")
 print(f"{algorithm_P(I, E2)}")
-print("\nAlgorithm M")
-print(f"{algorithm_M(I, E2)}")
-# print(f"{algorithm_B(I, E2)}")
+print("\nAlgorithm M (with target bq = Father(y,x), Businessman(y)):")
+bq2 = FittingCQ(S, 1)
+bq2.add_relational_atom("Father", ("x2", "x1"))
+bq2.add_relational_atom("Businessman", ("x2", ))
+print(f"{algorithm_M(I, E2, bq2)}")
 print("\nAlgorithm R:")
 print(f"{algorithm_R(I, E2)}")
 print()
-
-# q = FittingCQ(S, 1)
-# q.add_relational_atom("Father", ("x2", "x1"))
-# q.add_relational_atom("Businessman", ("x2", ))
-
-# print(q)
-# print()

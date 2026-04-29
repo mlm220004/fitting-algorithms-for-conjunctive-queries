@@ -201,13 +201,27 @@ class FittingCQ:
         self.relational_atoms.add(pair)
     
     def __str__(self) -> str:
-        string = "q"
-        string += str(self.answer_variables)
-        string += " :- "
+        string = "q("
+        i = 1
+        for ace in self.answer_variables:
+            string += ace.capitalize()
+            if i < len(self.answer_variables):
+                string += ", "
+            i += 1
+        string += ")"
+        if len(self.relational_atoms) > 0:
+            string += " :- "
         i = 1
         for (R, B) in self.relational_atoms:
-            string += R
-            string += str(B)
+            string += R.lower()
+            string += "("
+            j = 1
+            for bce in B:
+                string += bce.capitalize()
+                if j < self.schema.get_arity(R):
+                    string += ", "
+                j += 1
+            string += ")"
             if i < len(self.relational_atoms):
                 string += ", "
             i += 1
@@ -465,75 +479,3 @@ def algorithm_R(I: DatabaseInstance, E: LabeledExamples) -> Optional[FittingCQ]:
                 pq.append(p)
 
     return None  # “None exists” (per the paper)
-
-
-S = DatabaseSchema("S")
-S.add_relation("Businessman", 1)
-S.add_relation("Economist", 1)
-S.add_relation("Democrat", 1)
-S.add_relation("Republican", 1)
-S.add_relation("Father", 2)
-
-print(S)
-print()
-
-I = DatabaseInstance("I", S)
-I.add_fact("Businessman", ("donald", ))
-I.add_fact("Businessman", ("fred", ))
-I.add_fact("Businessman", ("james", ))
-I.add_fact("Economist", ("barack-sr", ))
-I.add_fact("Democrat", ("barack", ))
-I.add_fact("Democrat", ("franklin", ))
-I.add_fact("Republican", ("donald", ))
-I.add_fact("Father", ("barack-sr", "barack", ))
-I.add_fact("Father", ("fred", "donald", ))
-I.add_fact("Father", ("james", "franklin", ))
-
-print(I)
-print()
-print(f"adom(I) = {I.get_active_domain()}")
-print()
-
-E1 = LabeledExamples(1)
-E1.add_positive_example(I, ("franklin", ))
-E1.add_positive_example(I, ("barack", ))
-E1.add_negative_example(I, ("donald", ))
-
-E2 = LabeledExamples(1)
-E2.add_positive_example(I, ("franklin", ))
-E2.add_positive_example(I, ("donald", ))
-E2.add_negative_example(I, ("barack", ))
-
-# print("----------------")
-# print()
-
-# TEST CASE 1
-print("TEST CASE 1")
-print(E1)
-print()
-print("Algorithm P:")
-print(f"{algorithm_P(I, E1)}")
-print("\nAlgorithm M (with target bq = Democrat(x1)):")
-bq1 = FittingCQ(S, 1)
-bq1.add_relational_atom("Democrat", ("x1", ))
-print(f"{algorithm_M(I, E1, bq1)}")
-print()
-print("Algorithm R:")
-print(f"{algorithm_R(I, E1)}")
-print()
-
-# TEST CASE 2
-print("----------------")
-print("TEST CASE 2")
-print(E2)
-print()
-print("Algorithm P:")
-print(f"{algorithm_P(I, E2)}")
-print("\nAlgorithm M (with target bq = Father(y,x), Businessman(y)):")
-bq2 = FittingCQ(S, 1)
-bq2.add_relational_atom("Father", ("x2", "x1"))
-bq2.add_relational_atom("Businessman", ("x2", ))
-print(f"{algorithm_M(I, E2, bq2)}")
-print("\nAlgorithm R:")
-print(f"{algorithm_R(I, E2)}")
-print()

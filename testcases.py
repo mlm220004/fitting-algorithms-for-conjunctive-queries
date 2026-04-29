@@ -28,8 +28,15 @@ presidents_examples_1.add_positive_example(presidents_instance, ("franklin", ))
 presidents_examples_1.add_positive_example(presidents_instance, ("barack", ))
 presidents_examples_1.add_negative_example(presidents_instance, ("donald", ))
 
-print("Testing algorithm P")
-print(f"{algorithm_P(presidents_instance, presidents_examples_1)}")
+bq1 = FittingCQ(presidents_schema, 1)
+bq1.add_relational_atom("Democrat", ("x1", ))
+
+print("Case 1:\n")
+print(f"Algorithm P:\n{algorithm_P(presidents_instance, presidents_examples_1)}\n")
+print(f"Algorithm M:\n{algorithm_M(presidents_instance, presidents_examples_1, bq1)}\n")
+print(f"Algorithm B:\n{algorithm_B(presidents_instance, presidents_examples_1)}\n")
+print(f"Algorithm R:\n{algorithm_R(presidents_instance, presidents_examples_1)}\n")
+print("\n")
 
 """
 ANSWER
@@ -59,6 +66,17 @@ presidents_examples_2 = LabeledExamples(1)
 presidents_examples_2.add_positive_example(presidents_instance, ("franklin", ))
 presidents_examples_2.add_positive_example(presidents_instance, ("donald", ))
 presidents_examples_2.add_negative_example(presidents_instance, ("barack", ))
+
+bq2 = FittingCQ(presidents_schema, 1)
+bq2.add_relational_atom("Father", ("x2", "x1"))
+bq2.add_relational_atom("Businessman", ("x2", ))
+
+print("Case 2:\n")
+print(f"Algorithm P:\n{algorithm_P(presidents_instance, presidents_examples_2)}\n")
+print(f"Algorithm M:\n{algorithm_M(presidents_instance, presidents_examples_2, bq2)}\n")
+print(f"Algorithm B:\n{algorithm_B(presidents_instance, presidents_examples_2)}\n")
+print(f"Algorithm R:\n{algorithm_R(presidents_instance, presidents_examples_2)}\n")
+print("\n")
 
 """
 ANSWER
@@ -94,6 +112,10 @@ presidents_examples_3.add_positive_example(presidents_instance, ("barack", ))
 presidents_examples_3.add_positive_example(presidents_instance, ("donald", ))
 presidents_examples_3.add_negative_example(presidents_instance, ("franklin", ))
 
+print("Case 3:\n")
+print(f"Algorithm R:\n{algorithm_R(presidents_instance, presidents_examples_3)}\n")
+print("\n")
+
 """
 ANSWER
 
@@ -113,6 +135,17 @@ there is no fitting CQ where
 presidents_examples_4 = LabeledExamples(2)
 presidents_examples_4.add_positive_example(presidents_instance, ("barack-sr", "barack"))
 presidents_examples_4.add_negative_example(presidents_instance, ("fred", "donald"))
+
+bq4 = FittingCQ(presidents_schema, 2)
+bq4.add_relational_atom("Father", ("x1", "x2"))
+bq4.add_relational_atom("Economist", ("x1", ))
+
+print("Case 4:\n")
+print(f"Algorithm P:\n{algorithm_P(presidents_instance, presidents_examples_4)}\n")
+print(f"Algorithm M:\n{algorithm_M(presidents_instance, presidents_examples_4, bq4)}\n")
+print(f"Algorithm B:\n{algorithm_B(presidents_instance, presidents_examples_4)}\n")
+print(f"Algorithm R:\n{algorithm_R(presidents_instance, presidents_examples_4)}\n")
+print("\n")
 
 """
 ANSWER
@@ -141,6 +174,17 @@ presidents_examples_5 = LabeledExamples(2)
 presidents_examples_5.add_positive_example(presidents_instance, ("fred", "donald"))
 presidents_examples_5.add_negative_example(presidents_instance, ("barack-sr", "barack"))
 
+bq5 = FittingCQ(presidents_schema, 2)
+bq5.add_relational_atom("Father", ("x1", "x2"))
+bq5.add_relational_atom("Republican", ("x2", ))
+
+print("Case 5:\n")
+print(f"Algorithm P:\n{algorithm_P(presidents_instance, presidents_examples_5)}\n")
+print(f"Algorithm M:\n{algorithm_M(presidents_instance, presidents_examples_5, bq5)}\n")
+print(f"Algorithm B:\n{algorithm_B(presidents_instance, presidents_examples_5)}\n")
+print(f"Algorithm R:\n{algorithm_R(presidents_instance, presidents_examples_5)}\n")
+print("\n")
+
 """
 ANSWER
 
@@ -168,6 +212,18 @@ presidents_examples_6 = LabeledExamples(2)
 presidents_examples_6.add_positive_example(presidents_instance, ("james", "franklin"))
 presidents_examples_6.add_negative_example(presidents_instance, ("barack-sr", "barack"))
 presidents_examples_6.add_negative_example(presidents_instance, ("fred", "donald"))
+
+bq6 = FittingCQ(presidents_schema, 2)
+bq6.add_relational_atom("Father", ("x1", "x2"))
+bq6.add_relational_atom("Businessman", ("x1", ))
+bq6.add_relational_atom("Democrat", ("x2", ))
+
+print("Case 6:\n")
+print(f"Algorithm P:\n{algorithm_P(presidents_instance, presidents_examples_6)}\n")
+print(f"Algorithm M:\n{algorithm_M(presidents_instance, presidents_examples_6, bq6)}\n")
+print(f"Algorithm B:\n{algorithm_B(presidents_instance, presidents_examples_6)}\n")
+print(f"Algorithm R:\n{algorithm_R(presidents_instance, presidents_examples_6)}\n")
+print("\n")
 
 """
 ANSWER

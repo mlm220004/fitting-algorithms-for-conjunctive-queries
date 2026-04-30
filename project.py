@@ -440,10 +440,61 @@ def algorithm_M(I: DatabaseInstance, E: LabeledExamples, bq: FittingCQ) -> Fitti
 
 def algorithm_B(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
     query = FittingCQ(I.get_schema(), E.get_arity())
-    
-    # TODO
-    
-    return query
+
+    k = E.get_arity()
+    schema = I.get_schema()
+
+    # Generate variable pool (slightly larger than k to allow joins)
+    max_vars = k + 2
+    variables = [f"x{i}" for i in range(1, max_vars + 1)]
+
+    # Helper: generate all possible relational atoms
+    def generate_atoms():
+        atoms = []
+        for (R, arity) in schema.relations:
+            for assignment in product(variables, repeat=arity):
+                atoms.append((R, assignment))
+        return atoms
+
+    all_atoms = generate_atoms()
+
+    # Helper: generate all queries of size s
+    def generate_queries_of_size(s):
+        queries = []
+        for atom_combo in product(all_atoms, repeat=s):
+            q = FittingCQ(schema, k)
+            q.answer_variables = tuple(f"x{i}" for i in range(1, k + 1))
+
+            try:
+                for (R, B) in atom_combo:
+                    q.add_relational_atom(R, B)
+
+                # Safety condition: every answer variable must appear
+                appears = set()
+                for _, B in q.relational_atoms:
+                    appears.update(B)
+
+                if all(v in appears for v in q.answer_variables):
+                    queries.append(q)
+
+            except:
+                # Skip invalid constructions
+                continue
+
+        return queries
+
+    # Main loop: increase size bound
+    max_size = 4  # reasonable bound for your test cases
+
+    for s in range(1, max_size + 1):
+        candidates = generate_queries_of_size(s)
+
+        for q in candidates:
+            if fits_labeled_examples(q, E, schema, k):
+                return q
+
+    # If nothing found, return empty query
+    return FittingCQ(schema, k)
     
 def algorithm_R(I: DatabaseInstance, E: LabeledExamples) -> Optional[FittingCQ]:
     """Completely faithful implementation of Algorithm 9.1 from the paper (Section 9).

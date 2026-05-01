@@ -354,36 +354,32 @@ def fits_labeled_examples(q: FittingCQ, E: LabeledExamples, schema: DatabaseSche
     return True
 
 
-def minimize(ex, bq: FittingCQ, schema: DatabaseSchema, k: int):
-    """Exact implementation of the paper's minimize procedure (Algorithm 3.2, lines 6–10).
-    Drops a fact f only if a is still in bq(I \ {f}) according to the membership oracle.
+def minimize(ex, bq_canonical_ex, schema: DatabaseSchema, k: int):
+    """Exact match to the paper's minimize procedure (Algorithm 3.2, lines 6-9).
+    We keep removing facts greedily until no more can be removed while
+    still keeping the example positive w.r.t. bq (the membership oracle).
     """
     I, a = ex
-    current_facts = set(I.facts)   # facts are tuples (R, tup)
-    
+    I_bq, a_bq = bq_canonical_ex   # pre-built once outside the hot path
+
+    current_facts = set(I.facts)
     changed = True
     while changed:
         changed = False
-        facts_list = list(current_facts)
-        for i, fact in enumerate(facts_list):
-            fact_to_remove = fact
-            temp_facts = current_facts - {fact_to_remove}
-            
+        facts_list = list(current_facts)          # snapshot for safe iteration
+        for fact in facts_list:
+            temp_facts = current_facts - {fact}
             temp_I = DatabaseInstance("temp", schema)
             for (R, tup) in temp_facts:
                 temp_I.add_fact(R, tup)
-            
-            # Simulate MEMB_bq: check if a is still in bq(temp_I)
-            I_bq = DatabaseInstance("bq_canonical", schema)
-            for R_b, B_b in bq.relational_atoms:
-                I_bq.add_fact(R_b, B_b)
-            ex_query = (I_bq, bq.answer_variables)
-            
-            if query_holds_on_example(ex_query, temp_I, a, k):
+
+            # MEMB_bq check: does a still belong to bq(temp_I)?
+            if query_holds_on_example((I_bq, a_bq), temp_I, a, k):
                 current_facts = temp_facts
                 changed = True
-                break   # restart after a successful removal (greedy, as in the paper)
-    
+                break   # restart scan after a successful removal (greedy)
+
+    # build final minimized instance
     final_I = DatabaseInstance("minimized", schema)
     for (R, tup) in current_facts:
         final_I.add_fact(R, tup)
@@ -426,14 +422,21 @@ def algorithm_P(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
     
 
 def algorithm_M(I: DatabaseInstance, E: LabeledExamples, bq: FittingCQ) -> FittingCQ:
+    """Algorithm M from the paper (Algorithm 3.2)."""
     k = E.get_arity()
     schema = I.get_schema()
+
+    # === PRE-BUILD CANONICAL INSTANCE OF bq (oracle) ONCE ===
+    I_bq = DatabaseInstance("bq_canonical", schema)
+    for R_b, B_b in bq.relational_atoms:
+        I_bq.add_fact(R_b, B_b)
+    bq_canonical_ex = (I_bq, bq.answer_variables)
 
     e_star = strongest_example(schema, k)
 
     for pos_example in E.positive_examples:
         e_star = direct_product(e_star, pos_example, schema, k)
-        e_star = minimize(e_star, bq, schema, k)   # now uses the real oracle
+        e_star = minimize(e_star, bq_canonical_ex, schema, k)   # now uses pre-built oracle
 
     return canonical_cq(e_star, schema, k)
     

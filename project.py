@@ -422,7 +422,6 @@ def algorithm_P(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
     
 
 def algorithm_M(I: DatabaseInstance, E: LabeledExamples, bq: FittingCQ) -> FittingCQ:
-    """Algorithm M from the paper (Algorithm 3.2)."""
     k = E.get_arity()
     schema = I.get_schema()
 
@@ -500,10 +499,6 @@ def algorithm_B(I: DatabaseInstance, E: LabeledExamples) -> FittingCQ:
     return FittingCQ(schema, k)
     
 def algorithm_R(I: DatabaseInstance, E: LabeledExamples) -> Optional[FittingCQ]:
-    """Completely faithful implementation of Algorithm 9.1 from the paper (Section 9).
-    Uses upward refinement (delete one atom) + BFS prioritization.
-    May return None even when a fitting CQ exists (as explicitly discussed in the paper).
-    """
     k = E.get_arity()
     schema = I.get_schema()
 

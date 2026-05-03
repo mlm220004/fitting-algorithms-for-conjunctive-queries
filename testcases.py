@@ -32,7 +32,8 @@ bq1 = FittingCQ(presidents_schema, 1)
 bq1.add_relational_atom("Democrat", ("x1", ))
 
 print("Case 1:\n")
-print(f"Algorithm P:\n{algorithm_P(presidents_instance, presidents_examples_1)}\n")
+membq = algorithm_P(presidents_instance, presidents_examples_1)
+print(f"Algorithm P:\n{membq}\n")
 print(f"Algorithm M:\n{algorithm_M(presidents_instance, presidents_examples_1, bq1)}\n")
 print(f"Algorithm B:\n{algorithm_B(presidents_instance, presidents_examples_1)}\n")
 print(f"Algorithm R:\n{algorithm_R(presidents_instance, presidents_examples_1)}\n")
@@ -72,7 +73,8 @@ bq2.add_relational_atom("Father", ("x2", "x1"))
 bq2.add_relational_atom("Businessman", ("x2", ))
 
 print("Case 2:\n")
-print(f"Algorithm P:\n{algorithm_P(presidents_instance, presidents_examples_2)}\n")
+membq = algorithm_P(presidents_instance, presidents_examples_2)
+print(f"Algorithm P:\n{membq}\n")
 print(f"Algorithm M:\n{algorithm_M(presidents_instance, presidents_examples_2, bq2)}\n")
 print(f"Algorithm B:\n{algorithm_B(presidents_instance, presidents_examples_2)}\n")
 print(f"Algorithm R:\n{algorithm_R(presidents_instance, presidents_examples_2)}\n")
@@ -214,7 +216,6 @@ presidents_examples_6.add_negative_example(presidents_instance, ("barack-sr", "b
 presidents_examples_6.add_negative_example(presidents_instance, ("fred", "donald"))
 
 bq6 = FittingCQ(presidents_schema, 2)
-bq6.add_relational_atom("Father", ("x1", "x2"))
 bq6.add_relational_atom("Businessman", ("x1", ))
 bq6.add_relational_atom("Democrat", ("x2", ))
 
